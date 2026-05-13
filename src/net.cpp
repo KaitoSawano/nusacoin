@@ -523,7 +523,7 @@ void CNode::SetAddrLocal(const CService& addrLocalIn) {
 
 Network CNode::ConnectedThroughNetwork() const
 {
-    return addr.GetNetClassTemp();
+    return IsInboundConn() && m_inbound_onion ? NET_ONION : addr.GetNetClass();
 }
 
 #undef X
