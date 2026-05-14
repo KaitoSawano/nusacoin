@@ -148,6 +148,17 @@ Updated RPCs
   compact blocks high-bandwidth peer. High-bandwidth peers send new block
   announcements via a `cmpctblock` message rather than the usual inv/headers
   announcements. See BIP 152 for more details. (#19776)
+
+- The `getpeerinfo` RPC no longer returns the `banscore` field unless the configuration
+  option `-deprecatedrpc=banscore` is used. The `banscore` field will be fully
+  removed in the next major release. (#19469)
+
+
+- The `-banscore` configuration option, which modified the default threshold for
+  disconnecting and discouraging misbehaving peers, has been removed as part of
+  changes in 0.20.1 and in this release to the handling of misbehaving peers.
+  Refer to "Changes regarding misbehaving peers" in the 0.20.1 release notes for
+  details. (#19464)
   
 - `getnetworkinfo` now returns two new fields, `connections_in` and
   `connections_out`, that provide the number of inbound and outbound peer
