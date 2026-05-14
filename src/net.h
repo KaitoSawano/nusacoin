@@ -26,6 +26,7 @@
 #include <uint256.h>
 
 #include <atomic>
+#include <cstdint>
 #include <deque>
 #include <stdint.h>
 #include <thread>
@@ -548,7 +549,7 @@ void Discover();
 void StartMapPort();
 void InterruptMapPort();
 void StopMapPort();
-unsigned short GetListenPort();
+uint16_t GetListenPort();
 
 struct CombinerAll
 {

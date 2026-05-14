@@ -6,7 +6,7 @@
 #define BITCOIN_QT_OPTIONSMODEL_H
 
 #include <consensus/amount.h>
-
+#include <cstdint>
 #include <QAbstractListModel>
 
 #include <assert.h>
@@ -16,7 +16,7 @@ class Node;
 }
 
 extern const char *DEFAULT_GUI_PROXY_HOST;
-static constexpr unsigned short DEFAULT_GUI_PROXY_PORT = 9050;
+static constexpr uint16_t DEFAULT_GUI_PROXY_PORT = 9050;
 
 /** Interface from Qt to configuration data structure for Nusacoin client.
    To Qt, the options are presented as a list with the different options
