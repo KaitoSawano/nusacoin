@@ -45,9 +45,11 @@ class NetTest(NusacoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
-        self.extra_args = [["-minrelaytxfee=0.00001000"],["-minrelaytxfee=0.00000500"]]
+        self.extra_args = [["-minrelaytxfee=0.00001000"], ["-minrelaytxfee=0.00000500"]]
 
     def run_test(self):
+        self.log.info('Get out of IBD for the minfeefilter test')
+        self.nodes[0].generate(1)
         # Get out of IBD for the minfeefilter and getpeerinfo tests.
         self.nodes[0].generate(101)
         # Connect nodes both ways.
