@@ -288,7 +288,6 @@ libnusacoin_server_a_SOURCES = \
   index/blockfilterindex.cpp \
   index/txindex.cpp \
   interfaces/chain.cpp \
-  interfaces/node.cpp \
   init.cpp \
   dbwrapper.cpp \
   miner.cpp \
@@ -297,6 +296,7 @@ libnusacoin_server_a_SOURCES = \
   node/coin.cpp \
   node/coinstats.cpp \
   node/context.cpp \
+  node/interfaces.cpp \
   node/psbt.cpp \
   node/transaction.cpp \
   node/ui_interface.cpp \

@@ -42,8 +42,13 @@
 
 #include <boost/signals2/signal.hpp>
 
-namespace interfaces {
+using interfaces::BlockTip;
+using interfaces::Handler;
+using interfaces::MakeHandler;
+using interfaces::Node;
+using interfaces::WalletClient;
 
+namespace node {
 namespace {
 
 class NodeImpl : public Node
@@ -303,9 +308,10 @@ public:
     NodeContext* m_context{nullptr};
     util::Ref m_context_ref;
 };
-
 } // namespace
+} // namespace node
 
-std::unique_ptr<Node> MakeNode(NodeContext* context) { return MakeUnique<NodeImpl>(context); }
+namespace interfaces {
+std::unique_ptr<Node> MakeNode(NodeContext* context) { return MakeUnique<node::NodeImpl>(context); }
 
 } // namespace interfaces
