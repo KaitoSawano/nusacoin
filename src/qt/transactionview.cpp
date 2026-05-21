@@ -562,7 +562,7 @@ QWidget *TransactionView::createDateRangeWidget()
     dateFrom = new QDateTimeEdit(this);
     dateFrom->setDisplayFormat("dd/MM/yyyy");
     dateFrom->setCalendarPopup(true);
-    dateFrom->setStyleSheet("QDateTimeEdit { background-color: white; color: #018f01; font-weight: bold;} QCalendarWidget QWidget { background-color: #018f01;} QCalendarWidget QMenu { font-weight: bold; background-color: black; color: white;} QCalendarWidget QTableView { font-weight: bold; background-color: white; color: black; } QCalendarWidget QAbstractItemView { selection-color: white; color: black; selection-background-color: #018f01; }");
+    dateFrom->setStyleSheet("QDateTimeEdit { background-color: white; color: #018f01; font-weight: bold;} QCalendarWidget QWidget { background-color: #018f01;} QCalendarWidget QMenu { font-weight: bold; background-color: black; color: white;} QCalendarWidget QTableView { font-weight: bold; background-color: white; color: black; } QCalendarWidget QAbstractItemView { selection-color: white; color: black; selection-background-color: #018f01; } QCalendarWidget QAbstractItemView:disabled { color: #888888; }");
     dateFrom->setMinimumWidth(100);
     dateFrom->setDate(QDate::currentDate().addDays(-7));
     layout->addWidget(dateFrom);
@@ -571,7 +571,7 @@ QWidget *TransactionView::createDateRangeWidget()
     dateTo = new QDateTimeEdit(this);
     dateTo->setDisplayFormat("dd/MM/yyyy");
     dateTo->setCalendarPopup(true);
-    dateTo->setStyleSheet("QDateTimeEdit { background-color: white; color: #018f01; font-weight: bold;} QCalendarWidget QWidget { background-color: #018f01;} QCalendarWidget QMenu { font-weight: bold; background-color: black; color: white;} QCalendarWidget QTableView { font-weight: bold; background-color: white; color: black; } QCalendarWidget QAbstractItemView { selection-color: white; color: black; selection-background-color: #018f01; }");
+    dateTo->setStyleSheet("QDateTimeEdit { background-color: white; color: #018f01; font-weight: bold;} QCalendarWidget QWidget { background-color: #018f01;} QCalendarWidget QMenu { font-weight: bold; background-color: black; color: white;} QCalendarWidget QTableView { font-weight: bold; background-color: white; color: black; } QCalendarWidget QAbstractItemView { selection-color: white; color: black; selection-background-color: #018f01; } QCalendarWidget QAbstractItemView:disabled { color: #888888; }");
     dateTo->setMinimumWidth(100);
     dateTo->setDate(QDate::currentDate());
     layout->addWidget(dateTo);
