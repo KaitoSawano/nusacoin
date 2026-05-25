@@ -198,30 +198,33 @@ static std::string LabelFromValue(const UniValue& value)
  *
  * @param[in]     pwallet        Wallet pointer
  * @param[in,out] cc             Coin control which is to be updated
- * @param[in]     estimate_mode  String value (e.g. "ECONOMICAL")
- * @param[in]     estimate_param Parameter (blocks to confirm, explicit fee rate, etc)
- * @throws a JSONRPCError if estimate_mode is unknown, or if estimate_param is missing when required
+ * @param[in]     conf_target    UniValue integer, confirmation target in blocks, values between 1 and 1008 are valid per policy/fees.h;
+ *                                   if a fee_rate is present, 0 is allowed here as a no-op positional placeholder
+ * @param[in]     estimate_mode  UniValue string, fee estimation mode, valid values are "unset", "economical" or "conservative";
+ *                                   if a fee_rate is present, "" is allowed here as a no-op positional placeholder
+ * @param[in]     fee_rate       UniValue real, fee rate in nu/vB;
+ *                                   if a fee_rate is present, both conf_target and estimate_mode must either be null, or no-op values
+ * @throws a JSONRPCError if conf_target, estimate_mode, or fee_rate contain invalid values or are in conflict
  */
-static void SetFeeEstimateMode(const CWallet* pwallet, CCoinControl& cc, const UniValue& estimate_mode, const UniValue& estimate_param)
+static void SetFeeEstimateMode(const CWallet* pwallet, CCoinControl& cc, const UniValue& conf_target, const UniValue& estimate_mode, const UniValue& fee_rate)
 {
-    if (!estimate_mode.isNull()) {
-        if (!FeeModeFromString(estimate_mode.get_str(), cc.m_fee_mode)) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid estimate_mode parameter");
+    if (!fee_rate.isNull()) {
+        if (!conf_target.isNull() && conf_target.get_int() > 0) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify both conf_target and fee_rate. Please provide either a confirmation target in blocks for automatic fee estimation, or an explicit fee rate.");
         }
-    }
-
-    if (cc.m_fee_mode == FeeEstimateMode::NUX_KB || cc.m_fee_mode == FeeEstimateMode::NU_B) {
-        if (estimate_param.isNull()) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Selected estimate_mode %s requires a fee rate to be specified in conf_target", estimate_mode.get_str()));
+    if (!estimate_mode.isNull() && !estimate_mode.get_str().empty()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify both estimate_mode and fee_rate");
         }
-
-        CAmount feerate{AmountFromValue(estimate_param)};
-        cc.m_feerate = cc.m_fee_mode == FeeEstimateMode::NU_B ? CFeeRate(feerate, COIN) : CFeeRate(feerate);
-
-        // default RBF to true for explicit fee rate modes
+        cc.m_feerate = CFeeRate(AmountFromValue(fee_rate), COIN);
+        // Default RBF to true for explicit fee_rate, if unset.
         if (cc.m_signal_bip125_rbf == boost::none) cc.m_signal_bip125_rbf = true;
-    } else if (!estimate_param.isNull()) {
-        cc.m_confirm_target = ParseConfirmTarget(estimate_param, pwallet->chain().estimateMaxBlocks());
+        return;
+    }
+    if (!estimate_mode.isNull() && !FeeModeFromString(estimate_mode.get_str(), cc.m_fee_mode)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid estimate_mode parameter");
+    }
+    if (!conf_target.isNull()) {
+        cc.m_confirm_target = ParseConfirmTarget(conf_target, pwallet->chain().estimateMaxBlocks());
     }
 }
 
@@ -447,7 +450,8 @@ static UniValue sendtoaddress(const JSONRPCRequest& request)
             "       \"" + FeeModes("\"\n\"") + "\""},
                     {"avoid_reuse", RPCArg::Type::BOOL, /* default */ "true", "(only available if avoid_reuse wallet flag is set) Avoid spending from dirty addresses; addresses are considered\n"
             "                             dirty if they have previously been used in a transaction."},
-                {"verbose", RPCArg::Type::BOOL, /* default */ "false", "If true, return extra information about the transaction."},
+                    {"fee_rate", RPCArg::Type::AMOUNT, /* default */ "not set, fall back to wallet fee estimation", "Specify a fee rate in " + CURRENCY_ATOM + "/vB."},
+                    {"verbose", RPCArg::Type::BOOL, /* default */ "false", "If true, return extra information about the transaction."},
                 },
                 {
                     RPCResult{"if verbose is not set or set to false",
@@ -498,7 +502,7 @@ static UniValue sendtoaddress(const JSONRPCRequest& request)
     // We also enable partial spend avoidance if reuse avoidance is set.
     coin_control.m_avoid_partial_spends |= coin_control.m_avoid_address_reuse;
 
-    SetFeeEstimateMode(pwallet, coin_control, request.params[7], request.params[6]);
+    SetFeeEstimateMode(pwallet, coin_control, /* conf_target */ request.params[6], /* estimate_mode */ request.params[7], /* fee_rate */ request.params[9]);
 
     EnsureWalletIsUnlocked(pwallet);
 
@@ -513,7 +517,7 @@ static UniValue sendtoaddress(const JSONRPCRequest& request)
     std::vector<CRecipient> recipients;
     ParseRecipients(address_amounts, subtractFeeFromAmount, recipients);
 
-    bool verbose = request.params[9].isNull() ? false: request.params[9].get_bool();  
+    const bool verbose{request.params[10].isNull() ? false : request.params[10].get_bool()}; 
 
     return SendMoney(pwallet, coin_control, recipients, mapValue, verbose);
 }
@@ -876,7 +880,8 @@ static UniValue sendmany(const JSONRPCRequest& request)
                                        "or fee rate (for " + CURRENCY_UNIT + "/kB and " + CURRENCY_ATOM + "/B estimate modes)"},
                     {"estimate_mode", RPCArg::Type::STR, /* default */ "unset", std::string() + "The fee estimate mode, must be one of (case insensitive):\n"
             "       \"" + FeeModes("\"\n\"") + "\""},
-            {"verbose", RPCArg::Type::BOOL, /* default */ "false", "If true, return extra infomration about the transaction."},
+                    {"fee_rate", RPCArg::Type::AMOUNT, /* default */ "not set, fall back to wallet fee estimation", "Specify a fee rate in " + CURRENCY_ATOM + "/vB."},
+                    {"verbose", RPCArg::Type::BOOL, /* default */ "false", "If true, return extra infomration about the transaction."},
                 },
                 {
                     RPCResult{"if verbose is not set or set to false",
@@ -928,12 +933,12 @@ static UniValue sendmany(const JSONRPCRequest& request)
         coin_control.m_signal_bip125_rbf = request.params[5].get_bool();
     }
 
-    SetFeeEstimateMode(pwallet, coin_control, request.params[7], request.params[6]);
+    SetFeeEstimateMode(pwallet, coin_control, /* conf_target */ request.params[6], /* estimate_mode */ request.params[7], /* fee_rate */ request.params[8]);
 
     std::vector<CRecipient> recipients;
     ParseRecipients(sendTo, subtractFeeFromAmount, recipients);
 
-    bool verbose = request.params[8].isNull() ? false : request.params[8].get_bool();
+    const bool verbose{request.params[9].isNull() ? false : request.params[9].get_bool()};
 
     return SendMoney(pwallet, coin_control, recipients, std::move(mapValue), verbose);
 }
@@ -3078,7 +3083,8 @@ void FundTransaction(CWallet* const pwallet, CMutableTransaction& tx, CAmount& f
                 {"lockUnspents", UniValueType(UniValue::VBOOL)},
                 {"lock_unspents", UniValueType(UniValue::VBOOL)},
                 {"locktime", UniValueType(UniValue::VNUM)},
-                {"feeRate", UniValueType()}, // will be checked below,
+                {"fee_rate", UniValueType()}, // will be checked by AmountFromValue() in SetFeeEstimateMode()
+                {"feeRate", UniValueType()}, // will be checked by AmountFromValue() below
                 {"psbt", UniValueType(UniValue::VBOOL)},
                 {"subtractFeeFromOutputs", UniValueType(UniValue::VARR)},
                 {"subtract_fee_from_outputs", UniValueType(UniValue::VARR)},
@@ -3125,15 +3131,21 @@ void FundTransaction(CWallet* const pwallet, CMutableTransaction& tx, CAmount& f
             lockUnspents = (options.exists("lock_unspents") ? options["lock_unspents"] : options["lockUnspents"]).get_bool();
         }
 
-        if (options.exists("feeRate"))
-        {
+        if (options.exists("feeRate")) {
+            if (options.exists("fee_rate")) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify both fee_rate (" + CURRENCY_ATOM + "/vB) and feeRate (" + CURRENCY_UNIT + "/kvB)");
+            }
             if (options.exists("conf_target")) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify both conf_target and feeRate");
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify both conf_target and feeRate. Please provide either a confirmation target in blocks for automatic fee estimation, or an explicit fee rate.");
             }
             if (options.exists("estimate_mode")) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify both estimate_mode and feeRate");
             }
-            coinControl.m_feerate = CFeeRate(AmountFromValue(options["feeRate"]));
+            CFeeRate fee_rate(AmountFromValue(options["feeRate"]));
+            if (fee_rate <= CFeeRate(0)) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid feeRate %s (must be greater than 0)", fee_rate.ToString()));
+            }
+            coinControl.m_feerate = fee_rate;
             coinControl.fOverrideFeeRate = true;
         }
 
@@ -3143,7 +3155,7 @@ void FundTransaction(CWallet* const pwallet, CMutableTransaction& tx, CAmount& f
         if (options.exists("replaceable")) {
             coinControl.m_signal_bip125_rbf = options["replaceable"].get_bool();
         }
-        SetFeeEstimateMode(pwallet, coinControl, options["estimate_mode"], options["conf_target"]);
+        SetFeeEstimateMode(pwallet, coinControl, options["conf_target"], options["estimate_mode"], options["fee_rate"]);
       }
     } else {
         // if options is null and not a bool
@@ -3179,8 +3191,6 @@ static UniValue fundrawtransaction(const JSONRPCRequest& request)
     std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
     CWallet* const pwallet = wallet.get();
 
-    
-
     RPCHelpMan{"fundrawtransaction",
                 "\nIf the transaction has no inputs, they will be automatically selected to meet its out value.\n"  
                 "It will add at most one change output to the outputs.\n"
@@ -3205,7 +3215,8 @@ static UniValue fundrawtransaction(const JSONRPCRequest& request)
                                                           "Only solvable inputs can be used. Watch-only destinations are solvable if the public key and/or output script was imported,\n"
                                                           "e.g. with 'importpubkey' or 'importmulti' with the 'pubkeys' or 'desc' field."},
                             {"lockUnspents", RPCArg::Type::BOOL, /* default */ "false", "Lock selected unspent outputs"},
-                            {"feeRate", RPCArg::Type::AMOUNT, /* default */ "not set: makes wallet determine the fee", "Set a specific fee rate in " + CURRENCY_UNIT + "/kB"},
+                            {"fee_rate", RPCArg::Type::AMOUNT, /* default */ "not set, fall back to wallet fee estimation", "Specify a fee rate in " + CURRENCY_ATOM + "/vB."},
+                            {"feeRate", RPCArg::Type::AMOUNT, /* default */ "not set, fall back to wallet fee estimation", "Specify a fee rate in " + CURRENCY_UNIT + "/kB."},
                             {"subtractFeeFromOutputs", RPCArg::Type::ARR, /* default */ "empty array", "The integers.\n"
                             "                              The fee will be equally deducted from the amount of each specified output.\n"
                             "                              Those recipients will receive less nusacoins than you enter in their corresponding amount field.\n"
@@ -3231,7 +3242,7 @@ static UniValue fundrawtransaction(const JSONRPCRequest& request)
                     },
                 },
                 RPCResult{
-                            RPCResult::Type::OBJ, "", "",
+                    RPCResult::Type::OBJ, "", "",
                     {
                         {RPCResult::Type::STR_HEX, "hex", "The resulting raw transaction (hex-encoded string)"},
                         {RPCResult::Type::STR_AMOUNT, "fee", "Fee in " + CURRENCY_UNIT + " the resulting transaction pays"},
@@ -3376,12 +3387,13 @@ static UniValue bumpfee(const JSONRPCRequest& request)
         "\nBumps the fee of an opt-in-RBF transaction T, replacing it with a new transaction B.\n"
         + std::string(want_psbt ? "Returns a PSBT instead of creating and signing a new transaction.\n" : "") + 
         "An opt-in RBF transaction with the given txid must be in the wallet.\n"
-        "The command will pay the additional fee by reducing change outputs or adding inputs when necessary. It may add a new change output if one does not already exist.\n"
+        "The command will pay the additional fee by reducing change outputs or adding inputs when necessary.\n"
+        "It may add a new change output if one does not already exist.\n"
         "All inputs in the original transaction will be included in the replacement transaction.\n"
         "The command will fail if the wallet or mempool contains a transaction that spends one of T's outputs.\n"
         "By default, the new fee will be calculated automatically using the estimatesmartfee RPC.\n"
         "The user can specify a confirmation target for estimatesmartfee.\n"
-        "Alternatively, the user can specify a fee_rate (" + CURRENCY_UNIT + " per kB) for the new transaction.\n"
+        "Alternatively, the user can specify a fee_rate (in " + CURRENCY_ATOM + "/vB) for the new transaction.\n"
         "At a minimum, the new fee rate must be high enough to pay an additional new relay fee (incrementalfee\n"
         "returned by getnetworkinfo) to enter the node's mempool.\n",
         {
@@ -3390,9 +3402,9 @@ static UniValue bumpfee(const JSONRPCRequest& request)
                 {
                     {"conf_target", RPCArg::Type::NUM, /* default */ "wallet -txconfirmtarget", "Confirmation target (in blocks)\n"
                              "or fee rate (for " + CURRENCY_UNIT + "/kB and " + CURRENCY_ATOM + "/B estimate modes)"},
-                    {"fee_rate", RPCArg::Type::NUM, /* default */ "fall back to 'conf_target'", "fee rate (NOT total fee) to pay, in " + CURRENCY_UNIT + "/kB.\n"
-                             "Specify a fee rate instead of relying on the built-in fee estimator.\n"
-                             "Must be at least 0.0001 " + CURRENCY_UNIT + "/kB higher than the current transaction fee rate.\n"},
+                    {"fee_rate", RPCArg::Type::AMOUNT, /* default */ "not set, fall back to wallet fee estimation",
+                             "\nSpecify a fee rate in " + CURRENCY_ATOM + "/vB instead of relying on the built-in fee estimator.\n"
+                             "Must be at least 1 " + CURRENCY_ATOM + "/vB higher than the current transaction fee rate.\n"},
                     {"replaceable", RPCArg::Type::BOOL, /* default */ "true", "Whether the new transaction should still be\n"
     "                         marked bip-125 replaceable. If true, the sequence numbers in the transaction will\n"
     "                         be left unchanged from the original. If false, any input sequence numbers in the\n"
@@ -3452,7 +3464,7 @@ static UniValue bumpfee(const JSONRPCRequest& request)
             {
                 {"confTarget", UniValueType(UniValue::VNUM)},
                 {"conf_target", UniValueType(UniValue::VNUM)},
-                {"fee_rate", UniValueType(UniValue::VNUM)},
+                {"fee_rate", UniValueType()}, // will be checked by AmountFromValue() in SetFeeEstimateMode()
                 {"replaceable", UniValueType(UniValue::VBOOL)},
                 {"estimate_mode", UniValueType(UniValue::VSTR)},
             },
@@ -3478,7 +3490,7 @@ static UniValue bumpfee(const JSONRPCRequest& request)
         if (options.exists("replaceable")) {
             coin_control.m_signal_bip125_rbf = options["replaceable"].get_bool();
         }
-        SetFeeEstimateMode(pwallet, coin_control, options["estimate_mode"], conf_target);
+        SetFeeEstimateMode(pwallet, coin_control, conf_target, options["estimate_mode"], options["fee_rate"]);
     }
 
     // Make sure the results are valid at least up to the most recent block
@@ -4019,6 +4031,7 @@ static RPCHelpMan send()
                     "or fee rate (for " + CURRENCY_UNIT + "/kB and " + CURRENCY_ATOM + "/B estimate modes)"},
             {"estimate_mode", RPCArg::Type::STR, /* default */ "unset", std::string() + "The fee estimate mode, must be one of (case insensitive):\n"
                         "       \"" + FeeModes("\"\n\"") + "\""},
+            {"fee_rate", RPCArg::Type::AMOUNT, /* default */ "not set, fall back to wallet fee estimation", "Specify a fee rate in " + CURRENCY_ATOM + "/vB."},
             {"options", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "",
                 {
                     {"add_inputs", RPCArg::Type::BOOL, /* default */ "false", "If inputs are specified, automatically include more if they are not enough."},
@@ -4030,6 +4043,7 @@ static RPCHelpMan send()
                             "or fee rate (for " + CURRENCY_UNIT + "/kB and " + CURRENCY_ATOM + "/B estimate modes)"},
                     {"estimate_mode", RPCArg::Type::STR, /* default */ "unset", std::string() + "The fee estimate mode, must be one of (case insensitive):\n"
             "       \"" + FeeModes("\"\n\"") + "\""},
+                    {"fee_rate", RPCArg::Type::AMOUNT, /* default */ "not set, fall back to wallet fee estimation", "Specify a fee rate in " + CURRENCY_ATOM + "/vB."},
                     {"include_watching", RPCArg::Type::BOOL, /* default */ "true for watch-only wallets, otherwise false", "Also select inputs which are watch only.\n"
                                           "Only solvable inputs can be used. Watch-only destinations are solvable if the public key and/or output script was imported,\n"
                                           "e.g. with 'importpubkey' or 'importmulti' with the 'pubkeys' or 'desc' field."},
@@ -4074,10 +4088,11 @@ static RPCHelpMan send()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
         {
             RPCTypeCheck(request.params, {
-                UniValueType(), // ARR or OBJ, checked later
-                UniValue::VNUM,
-                UniValue::VSTR,
-                UniValue::VOBJ
+                UniValueType(), // outputs (ARR or OBJ, checked later)
+                UniValue::VNUM, // conf_target
+                UniValue::VSTR, // estimate_mode
+                UniValue::VNUM, // fee_rate
+                UniValue::VOBJ, // options
                 }, true
             );
 
@@ -4085,17 +4100,27 @@ static RPCHelpMan send()
             if (!wallet) return NullUniValue;
             CWallet* const pwallet = wallet.get();
 
-            UniValue options{request.params[3].isNull() ? UniValue::VOBJ : request.params[3]};
-            if (options.exists("feeRate") || options.exists("fee_rate") || options.exists("estimate_mode") || options.exists("conf_target")) {
+            UniValue options{request.params[4].isNull() ? UniValue::VOBJ : request.params[4]};
+            if (options.exists("conf_target") || options.exists("estimate_mode")) {
                 if (!request.params[1].isNull() || !request.params[2].isNull()) {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Use either conf_target and estimate_mode or the options dictionary to control fee rate");
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Pass conf_target and estimate_mode either as arguments or in the options object, but not both");
                 }
             } else {
                 options.pushKV("conf_target", request.params[1]);
                 options.pushKV("estimate_mode", request.params[2]);
             }
+            if (options.exists("fee_rate")) {
+                if (!request.params[3].isNull()) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Pass the fee_rate either as an argument, or in the options object, but not both");
+                }
+            } else {
+                options.pushKV("fee_rate", request.params[3]);
+            }
             if (!options["conf_target"].isNull() && (options["estimate_mode"].isNull() || (options["estimate_mode"].get_str() == "unset"))) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Specify estimate_mode");
+            }
+            if (options.exists("feeRate")) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Use fee_rate (" + CURRENCY_ATOM + "/vB) instead of feeRate");
             }
             if (options.exists("changeAddress")) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Use change_address");
@@ -4352,7 +4377,8 @@ UniValue walletcreatefundedpsbt(const JSONRPCRequest& request)
                             {"change_type", RPCArg::Type::STR, /* default */ "set by -changetype", "The output type to use. Only valid if changeAddress is not specified. Options are \"legacy\", \"p2sh-segwit\", and \"bech32\"."},
                             {"includeWatching", RPCArg::Type::BOOL, /* default */ "true for watch-only wallets, otherwise false", "Also select inputs which are watch only"},
                             {"lockUnspents", RPCArg::Type::BOOL, /* default */ "false", "Lock selected unspent outputs"},
-                            {"feeRate", RPCArg::Type::AMOUNT, /* default */ "not set: makes wallet determine the fee", "Set a specific fee rate in " + CURRENCY_UNIT + "/kB"},
+                            {"fee_rate", RPCArg::Type::AMOUNT, /* default */ "not set, fall back to wallet fee estimation", "Specify a fee rate in " + CURRENCY_ATOM + "/vB."},
+                            {"feeRate", RPCArg::Type::AMOUNT, /* default */ "not set, fall back to wallet fee estimation", "Specify a fee rate in " + CURRENCY_UNIT + "/kB."},
                             {"subtractFeeFromOutputs", RPCArg::Type::ARR, /* default */ "empty array", "The outputs to subtract the fee from.\n"
                             "                              The fee will be equally deducted from the amount of each specified output.\n"
                             "                              Those recipients will receive less nusacoins than you enter in their corresponding amount field.\n"
@@ -4535,9 +4561,9 @@ static const CRPCCommand commands[] =
     { "wallet",             "lockunspent",                      &lockunspent,                   {"unlock","transactions"} },
     { "wallet",             "removeprunedfunds",                &removeprunedfunds,             {"txid"} },
     { "wallet",             "rescanblockchain",                 &rescanblockchain,              {"start_height", "stop_height"} },
-    { "wallet",             "send",                             &send,                          {"outputs","conf_target","estimate_mode","options"} },
-    { "wallet",             "sendmany",                         &sendmany,                      {"dummy","amounts","minconf","comment","subtractfeefrom","replaceable","conf_target","estimate_mode","verbose"} },
-    { "wallet",             "sendtoaddress",                    &sendtoaddress,                 {"address","amount","comment","comment_to","subtractfeefromamount","replaceable","conf_target","estimate_mode","avoid_reuse","verbose"} },
+    { "wallet",             "send",                             &send,                          {"outputs","conf_target","estimate_mode","fee_rate","options"} },
+    { "wallet",             "sendmany",                         &sendmany,                      {"dummy","amounts","minconf","comment","subtractfeefrom","replaceable","conf_target","estimate_mode","fee_rate","verbose"} },
+    { "wallet",             "sendtoaddress",                    &sendtoaddress,                 {"address","amount","comment","comment_to","subtractfeefromamount","replaceable","conf_target","estimate_mode","avoid_reuse","fee_rate","verbose"} },
     { "wallet",             "sethdseed",                        &sethdseed,                     {"newkeypool","seed"} },
     { "wallet",             "setlabel",                         &setlabel,                      {"address","label"} },
     { "wallet",             "settxfee",                         &settxfee,                      {"amount"} },
