@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2025 The Nusacoin Core developers
+// Copyright (c) 2025-2026 The Nusacoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -339,14 +339,12 @@ bool ArgsManager::ParseParameters(int argc, const char* const argv[], std::strin
     }
 
     // we do not allow -includeconf from command line
-    bool success = true;  
     if (auto* includes = util::FindKey(m_settings.command_line_options, "includeconf")) {
-        for (const auto& include : util::SettingsSpan(*includes)) { 
-            error += "-includeconf cannot be used from commandline; -includeconf=" + include.get_str() + "\n"; 
-            success = false;
-        }
+        const auto& include{*util::SettingsSpan(*includes).begin()}; // pick first value as example
+        error = "-includeconf cannot be used from commandline; -includeconf=" + include.write();
+        return false;
     }
-    return success;
+    return true;
 }
 
 Optional<unsigned int> ArgsManager::GetArgFlags(const std::string& name) const
