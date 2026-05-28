@@ -22,10 +22,11 @@ protected:
     enum { WIDTH=BITS/8 };
     uint8_t m_data[WIDTH];
 public:
-    base_blob()
-    {
-        memset(m_data, 0, sizeof(m_data));
-    }
+    /* construct 0 value by default */
+    constexpr base_blob() : m_data() {}
+
+    /* constructor for constants between 1 and 255 */
+    constexpr explicit base_blob(uint8_t v) : m_data{v} {}
 
     explicit base_blob(const std::vector<unsigned char>& vch);
 
@@ -113,7 +114,7 @@ public:
  */
 class uint160 : public base_blob<160> {
 public:
-    uint160() {}
+    constexpr uint160() {}
     uint160(const base_blob<160>& b) : base_blob<160>(b) {}
     explicit uint160(const std::vector<unsigned char>& vch) : base_blob<160>(vch) {}
 };
@@ -125,9 +126,11 @@ public:
  */
 class uint256 : public base_blob<256> {
 public:
-    uint256() {}
-    uint256(const base_blob<256>& b) : base_blob<256>(b) {}
+    constexpr uint256() {}
+    constexpr explicit uint256(uint8_t v) : base_blob<256>(v) {}
     explicit uint256(const std::vector<unsigned char>& vch) : base_blob<256>(vch) {}
+    static const uint256 ZERO;
+    static const uint256 ONE;
 
     /** A cheap hash function that just returns 64 bits from the result, it can be
      * used when the contents are considered uniformly random. It is not appropriate
@@ -160,8 +163,6 @@ inline uint256 uint256S(const std::string& str)
     rv.SetHex(str);
     return rv;
 }
-
-uint256& UINT256_ONE();
 
 /** 512-bit unsigned big integer. */
 class uint512 : public base_blob<512> {
