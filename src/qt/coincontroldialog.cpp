@@ -126,7 +126,7 @@ CoinControlDialog::CoinControlDialog(CCoinControl& coin_control, WalletModel* _m
     ui->treeWidget->setColumnWidth(COLUMN_ADDRESS, 320);
     ui->treeWidget->setColumnWidth(COLUMN_DATE, 130);
     ui->treeWidget->setColumnWidth(COLUMN_CONFIRMATIONS, 110);
-    ui->treeWidget->setStyleSheet("QTreeView::item:selected {background-color: #018f01; selection-color: white;} QTreeView::branch:selected {background-color: #018f01; color: transparent;} QTreeView::item:hover {background-color: #daf5da; selection-color: black;} QTreeView::item:hover:!selected {background-color: #daf5da; selection-color: black;} QTreeView::item:selected:hover {background-color: #daf5da; selection-color: black;} QTreeView::branch:hover {background-color: #daf5da; selection-color: black;} QTreeView::branch:hover:selected {background-color: #daf5da; selection-color: black;}");
+    ui->treeWidget->setStyleSheet("QTreeView::item:selected {background-color: #018f01; selection-color: white;} QTreeView::branch:selected {background-color: #018f01; color: transparent;} QTreeView::item:hover {background-color: #daf5da; selection-color: black; color: black;} QTreeView::item:hover:!selected {background-color: #daf5da; selection-color: black; color: black;} QTreeView::item:selected:hover {background-color: #daf5da; selection-color: black;} QTreeView::branch:hover {background-color: #daf5da; selection-color: black;} QTreeView::branch:hover:selected {background-color: #daf5da; selection-color: black;}");
 
     // default view is sorted by amount desc
     sortView(COLUMN_AMOUNT, Qt::DescendingOrder);
